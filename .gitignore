@@ -1,0 +1,4 @@
+eduai/
+__pycache__/
+*.pyc
+.env
