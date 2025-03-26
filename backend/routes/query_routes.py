@@ -3,6 +3,7 @@ from models.embedding import generate_embedding
 from models.gemini import generate_response
 from pinecone import Pinecone
 from config import PINECONE_API_KEY
+from users.utils import token_required  # Import authentication decorator
 
 # Initialize Pinecone
 pc = Pinecone(api_key=PINECONE_API_KEY)
@@ -47,17 +48,27 @@ def query_pinecone(query_text, grade=None, subject=None, top_k=5):
     return results
 
 @query_bp.route("/", methods=["POST"])
-def query_pdf():
+@token_required
+def query_pdf(user_data):
     """Handle queries and retrieve relevant chunks from Pinecone."""
     data = request.get_json()
 
-    if not data or "query" not in data:
-        return jsonify({"error": "No query provided"}), 400
+    # Validate required fields
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+    if "query" not in data:
+        return jsonify({"error": "Query field is required"}), 400
 
     query_text = data["query"]
-    grade = data.get("grade")  # Optional grade filter
-    subject = data.get("subject")  # Optional subject filter
+    grade = data.get("grade")
+    subject = data.get("subject")
 
-    results = query_pinecone(query_text, grade, subject)
-
-    return jsonify({"results": results}), 200
+    try:
+        results = query_pinecone(query_text, grade, subject)
+        return jsonify({
+            "success": True,
+            "results": results,
+            "user": user_data["email"]  # Return minimal user info
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500

@@ -1,1 +1,5 @@
-from models.database import students, teachers, parents
+from models.database import db
+
+students = db.students
+teachers = db.teachers
+parents = db.parents
