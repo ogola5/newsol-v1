@@ -1,12 +1,16 @@
+import jwt
 from flask import Blueprint, request, jsonify
 import fitz  # PyMuPDF
+from flask_cors import CORS  # Import CORS
+from functools import wraps
+from config import SECRET_KEY
 from models.embedding import generate_embedding
 from models.rag import store_in_pinecone, delete_from_pinecone
 from models.database import save_pdf_metadata, store_teacher_feedback, store_parent_feedback, save_user_query, pdf_uploads
 
 
 upload_bp = Blueprint("upload_bp", __name__)
-
+CORS(upload_bp)  # Apply CORS to this blueprint
 # 📝 Extract text from PDF
 def extract_text_from_pdf(file):
     """Extract text from all pages of a PDF file."""
@@ -15,9 +19,30 @@ def extract_text_from_pdf(file):
     return "\n".join(full_text)
 
 # 📂 Upload a new PDF (Admins only)
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = request.headers.get("Authorization")
+        if not token:
+            return jsonify({"error": "Token is missing"}), 401
+
+        try:
+            decoded = jwt.decode(token.split(" ")[1], SECRET_KEY, algorithms=["HS256"])
+            request.admin_id = decoded["admin_id"]
+        except jwt.ExpiredSignatureError:
+            return jsonify({"error": "Token has expired"}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({"error": "Invalid token"}), 401
+
+        return f(*args, **kwargs)
+    return decorated
 @upload_bp.route("/upload", methods=["POST"])
+@token_required
 def upload_pdf():
+    print("Incoming Request:", request.form, request.files) 
     """Handle PDF upload, extract, chunk, embed, and store in Pinecone."""
+
+    # Check for missing file or admin_id
     if "file" not in request.files or "admin_id" not in request.form:
         return jsonify({"error": "Missing file or admin_id"}), 400
 
@@ -29,6 +54,9 @@ def upload_pdf():
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
 
+    filename = file.filename  # ✅ Extract filename correctly
+
+    # Extract text from PDF
     pdf_text = extract_text_from_pdf(file)
 
     # Chunk the text
@@ -36,13 +64,14 @@ def upload_pdf():
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=100)
     chunks = text_splitter.split_text(pdf_text)
 
-    # Store in Pinecone
-    store_in_pinecone(chunks)
+    # ✅ Store in Pinecone with correct filename argument
+    store_in_pinecone(chunks, grade, subject, filename)
 
-    # Store metadata in MongoDB
-    save_pdf_metadata(admin_id, file.filename, grade, subject, len(chunks))
+    # ✅ Store metadata in MongoDB
+    save_pdf_metadata(admin_id, filename, grade, subject, len(chunks))
 
     return jsonify({"message": f"Uploaded {len(chunks)} chunks!"}), 200
+
 
 # 🗑️ Delete a PDF (Admins only)
 @upload_bp.route("/delete/<filename>", methods=["DELETE"])

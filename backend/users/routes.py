@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from models.database import students, teachers, admins
+from models.database import students, teachers, parents
 from users.utils import hash_password, verify_password
 
 users_bp = Blueprint("users", __name__)
@@ -9,7 +9,7 @@ def register():
     data = request.get_json()
     user_type = data.get("user_type")
 
-    if user_type not in ["student", "teacher", "admin"]:
+    if user_type not in ["student", "teacher", "parent"]:
         return jsonify({"error": "Invalid user type"}), 400
 
     full_name = data.get("fullName")
@@ -46,7 +46,7 @@ def register():
         user_data.update({
             "role": data.get("role", "admin"),
         })
-        admins.insert_one(user_data)
+        parents.insert_one(user_data)
 
     return jsonify({"message": f"{user_type.capitalize()} registered successfully!"}), 201
 
@@ -58,10 +58,10 @@ def login():
     password = data.get("password")
     user_type = data.get("user_type")
 
-    if not email or not password or user_type not in ["student", "teacher", "admin"]:
+    if not email or not password or user_type not in ["student", "teacher", "parent"]:
         return jsonify({"error": "Invalid credentials"}), 400
 
-    collection = {"student": students, "teacher": teachers, "admin": admins}.get(user_type)
+    collection = {"student": students, "teacher": teachers, "parent": parents}.get(user_type)
 
     user = collection.find_one({"email": email})
     if not user or not verify_password(user["password"], password):
